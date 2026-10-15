@@ -4,8 +4,16 @@
 import os
 
 block_cipher = None
+# A relative script is resolved next to this spec, which turns "run.py" into packaging/run.py.
+ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir))
+ENTRY = os.path.abspath(os.path.join(ROOT, "run.py"))
+if not os.path.isfile(ENTRY):
+    raise SystemExit("ERROR: script '%s' not found" % ENTRY)
 binaries = []
-datas = [("assets/fonts", "assets/fonts"), ("assets/icon.png", "assets")]
+datas = [
+    (os.path.join(ROOT, "assets", "fonts"), os.path.join("assets", "fonts")),
+    (os.path.join(ROOT, "assets", "icon.png"), "assets"),
+]
 
 try:
     import PySide6
@@ -20,8 +28,8 @@ except Exception:
     pass
 
 a = Analysis(
-    ["run.py"],
-    pathex=["."],
+    [ENTRY],
+    pathex=[ROOT],
     binaries=binaries,
     datas=datas,
     hiddenimports=[
@@ -55,7 +63,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon="assets/icon.png",
+    icon=os.path.join(ROOT, "assets", "icon.png"),
 )
 coll = COLLECT(
     exe,

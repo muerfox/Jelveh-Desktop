@@ -6,6 +6,11 @@ import os
 import sys
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
+# VAAPI surfaces on Linux keep the last frame when the window goes fullscreen.
+# These files are 480p/720p, so software decode stays smooth and resizes cleanly.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("QT_FFMPEG_DECODING_HW_DEVICE_TYPES", ",")
+    os.environ.setdefault("QT_DISABLE_HW_TEXTURES_CONVERSION", "1")
 
 from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QGuiApplication, QKeySequence
@@ -27,7 +32,7 @@ from . import __version__
 from .pages import AccountPage, BrowsePage, DetailPage, HomePage, LibraryPage, SearchPage
 from .player import PlayerPage
 from .session import Session
-from .theme import app_font, app_icon, load_fonts, logo_pixmap, stylesheet
+from .theme import app_font, app_icon, load_fonts, logo_pixmap, search_icon, stylesheet
 from .widgets import Toast
 
 
@@ -36,9 +41,11 @@ class Hub(QObject):
     open_title = Signal(str, int)
     play_title = Signal(str, int)
     play_detail = Signal(object, object, object)
+    play_file = Signal(str, str)
     browse = Signal(str, str)
     resume = Signal(object)
     navigate = Signal(str)
+    open_downloads = Signal()
     logged_in = Signal()
 
 
@@ -79,7 +86,7 @@ class MainWindow(QMainWindow):
         self.library = LibraryPage(session, self.hub)
         self.detail = DetailPage(session, self.hub)
         self.account = AccountPage(session, self.hub)
-        self.player = PlayerPage(session.theme)
+        self.player = PlayerPage(session)
         self.player.volume.setValue(session.volume())
         for page in (self.home, self.browse, self.search, self.library, self.detail, self.account):
             self.stack.addWidget(page)
@@ -91,9 +98,11 @@ class MainWindow(QMainWindow):
         self.hub.open_title.connect(self.open_title)
         self.hub.play_title.connect(self.play_title)
         self.hub.play_detail.connect(self.play_detail)
+        self.hub.play_file.connect(self.play_file)
         self.hub.browse.connect(self.open_browse)
         self.hub.resume.connect(self.resume)
         self.hub.navigate.connect(self.navigate)
+        self.hub.open_downloads.connect(self._open_downloads)
         self.hub.logged_in.connect(self._after_login)
         self.player.closed.connect(self._close_player)
         self.player.progress.connect(session.remember)
@@ -145,7 +154,7 @@ class MainWindow(QMainWindow):
             ("series", "سریال‌ها"),
             ("search", "جستجو"),
             ("library", "لیست من"),
-            ("account", "حساب"),
+            ("account", "پروفایل"),
         ):
             button = QPushButton(label)
             button.setObjectName("nav")
@@ -170,20 +179,23 @@ class MainWindow(QMainWindow):
         self.search_box = QLineEdit()
         self.search_box.setObjectName("search")
         self.search_box.setPlaceholderText("فیلم، سریال، برنامه...")
+        self.search_box.setFixedHeight(36)
+        self.search_box.setMaximumWidth(320)
+        self.search_box.setClearButtonEnabled(True)
         self.search_box.returnPressed.connect(self._submit_search)
-        self.theme_button = QPushButton("حالت روشن")
-        self.theme_button.setObjectName("chip")
-        self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.theme_button.clicked.connect(self.session.theme.toggle)
+        self._search_action = QAction(self.search_box)
+        self._search_action.setIcon(search_icon(self.session.theme.palette.muted))
+        self.search_box.addAction(self._search_action, QLineEdit.ActionPosition.LeadingPosition)
+        self._search_action.triggered.connect(self._submit_search)
         self.account_button = QPushButton("ورود")
         self.account_button.setObjectName("primary")
+        self.account_button.setFixedHeight(36)
         self.account_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.account_button.clicked.connect(lambda: self.navigate("account"))
-        layout.addWidget(self.search_box, 1)
-        layout.addWidget(self.theme_button)
+        layout.addWidget(self.search_box, 0)
+        layout.addStretch(1)
         layout.addWidget(self.account_button)
         self._sync_account_button()
-        self._sync_theme_button()
         return bar
 
     def navigate(self, key: str) -> None:
@@ -207,6 +219,10 @@ class MainWindow(QMainWindow):
             self.nav_buttons[key].setChecked(True)
         widget = mapping.get(key, self.home)
         self._fade_to(widget)
+
+    def _open_downloads(self) -> None:
+        self.navigate("library")
+        self.library._show_tab("downloads")
 
     def _fade_to(self, widget: QWidget) -> None:
         self.stack.setCurrentWidget(widget)
@@ -284,6 +300,10 @@ class MainWindow(QMainWindow):
         self.player.play(detail, episode, None if index is None else int(index), resume_ms)
         self.root.setCurrentWidget(self.player)
 
+    def play_file(self, path: str, title: str) -> None:
+        self.player.play_local(path, title)
+        self.root.setCurrentWidget(self.player)
+
     def _close_player(self) -> None:
         self.root.setCurrentWidget(self.root.widget(0))
 
@@ -316,14 +336,12 @@ class MainWindow(QMainWindow):
         self.account_button.style().unpolish(self.account_button)
         self.account_button.style().polish(self.account_button)
 
-    def _sync_theme_button(self) -> None:
-        self.theme_button.setText("حالت روشن" if self.session.theme.mode == "dark" else "حالت تاریک")
-
     def _apply_theme(self) -> None:
         app = QApplication.instance()
         if app:
             app.setStyleSheet(stylesheet(self.session.theme))
-        self._sync_theme_button()
+        if hasattr(self, "_search_action"):
+            self._search_action.setIcon(search_icon(self.session.theme.palette.muted))
 
     def _load_favorites(self) -> None:
         def load():

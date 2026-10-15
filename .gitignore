@@ -6,3 +6,9 @@ build/
 dist/
 *.egg-info/
 .pytest_cache/
+*.spec.bak
+# PyInstaller / local package outputs
+*.AppImage
+Jelveh-*.zip
+Jelveh-*.tar.gz
+

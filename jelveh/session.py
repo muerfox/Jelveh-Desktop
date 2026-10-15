@@ -8,6 +8,7 @@ import time
 from PySide6.QtCore import QObject, QSettings, Signal
 
 from .api import JelvehApi
+from .downloads import DownloadManager
 from .images import ImageService
 from .tasks import TaskRunner
 from .theme import Theme
@@ -24,6 +25,7 @@ class Session(QObject):
         token = self.settings.value("auth/token", "")
         self.api = JelvehApi(str(token) if token else None)
         self.images = ImageService(self)
+        self.downloads = DownloadManager(self)
         self.tasks = TaskRunner(self)
         self.user = None
         self.favorites: dict[tuple, int] = {}

@@ -113,9 +113,26 @@ class JelvehApi:
     def search(self, text: str, page: int = 1) -> tuple[list[dict], dict]:
         return self._page("GET", "/search", {"search": text, "page": page, "per_page": 24})
 
+    def advanced_search(self, page: int = 1, per_page: int = 24, **filters: Any) -> tuple[list[dict], dict]:
+        params: dict[str, Any] = {"page": page, "per_page": per_page}
+        params.update(filters)
+        return self._page("GET", "/advanced-search", params)
+
     def genres(self) -> list[dict]:
         data, _meta = self._page("GET", "/genres", {"per_page": 100, "sort": "name", "direction": "asc"})
         return data
+
+    def countries(self) -> list[dict]:
+        rows: list[dict] = []
+        page = 1
+        while True:
+            data, meta = self._page("GET", "/countries", {"page": page, "per_page": 100, "sort": "name", "direction": "asc"})
+            rows.extend(data or [])
+            last = int(meta.get("last_page") or 1)
+            if page >= last:
+                break
+            page += 1
+        return rows
 
     def comments(self, kind: str, title_id: int, page: int = 1) -> tuple[list[dict], dict]:
         path = f"/{'movies' if kind == 'movie' else 'series'}/{title_id}/comments"
@@ -149,6 +166,14 @@ class JelvehApi:
 
     def create_playlist(self, name: str, description: str = "") -> dict:
         return self._data("POST", "/playlists", form={"name": name, "description": description or None})
+
+    def update_playlist(self, playlist_id: int, name: str | None = None, description: str | None = None) -> dict:
+        form: dict[str, Any] = {}
+        if name is not None:
+            form["name"] = name
+        if description is not None:
+            form["description"] = description
+        return self._data("PUT", f"/playlists/{playlist_id}", form=form)
 
     def delete_playlist(self, playlist_id: int) -> dict:
         return self._data("DELETE", f"/playlists/{playlist_id}")
@@ -186,6 +211,17 @@ class JelvehApi:
     def me(self) -> dict:
         return self._data("GET", "/auth/me")
 
+    def change_password(self, current_password: str, new_password: str) -> dict:
+        return self._data(
+            "POST",
+            "/auth/change-password",
+            form={
+                "current_password": current_password,
+                "new_password": new_password,
+                "new_password_confirmation": new_password,
+            },
+        )
+
     def logout(self) -> None:
         try:
             self._data("POST", "/auth/logout")
@@ -205,7 +241,14 @@ class JelvehApi:
     def _request(self, method: str, path: str, params: dict | None = None, form: dict | None = None) -> dict:
         query = ""
         if params:
-            clean = {key: value for key, value in params.items() if value not in (None, "")}
+            clean: dict[str, Any] = {}
+            for key, value in params.items():
+                if value in (None, "", []):
+                    continue
+                if isinstance(value, (list, tuple)):
+                    clean[key] = ",".join(str(item) for item in value if item not in (None, ""))
+                else:
+                    clean[key] = value
             if clean:
                 query = "?" + urllib.parse.urlencode(clean)
         url = API_ROOT + path + query

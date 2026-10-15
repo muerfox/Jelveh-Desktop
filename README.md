@@ -2,7 +2,7 @@
 
 Desktop client for [jelveh.top](https://jelveh.top). The same Python app runs on Linux and Windows. Each platform has its own build output:
 
-- Linux: `dist/linux/Jelveh/Jelveh`
+- Linux: `dist/linux/Jelveh-<version>-<arch>.AppImage`
 - Windows: `dist/windows/Jelveh/Jelveh.exe`
 
 The interface follows the site: right-to-left Persian, Vazirmatn, and the jet / ember palette (`#050505`, `#e50914`, `#ffc857`). Catalog data comes from `https://panel.jelveh.top/api/v1`. Playback uses the same `jelveh.top/media-proxy` path as the website and asks you to sign in first.
