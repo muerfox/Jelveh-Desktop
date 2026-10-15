@@ -1354,7 +1354,7 @@ class DownloadRow(QFrame):
         self.bar.setObjectName("downloadBar")
         self.bar.setTextVisible(False)
         self.bar.setRange(0, 100)
-        self.bar.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        self.bar.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self.pause_button = QPushButton("توقف")
