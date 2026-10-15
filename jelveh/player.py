@@ -81,7 +81,7 @@ class _LoadingPanel(QWidget):
         self.bar.setObjectName("playerLoad")
         self.bar.setRange(0, 0)
         self.bar.setTextVisible(False)
-        self.bar.setFixedSize(320, 8)
+        self.bar.setFixedSize(360, 18)
         layout.addWidget(self.caption, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.detail, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.bar, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -91,11 +91,13 @@ class _LoadingPanel(QWidget):
             QProgressBar#playerLoad {
                 background: #242424;
                 border: none;
-                border-radius: 4px;
+                border-radius: 9px;
+                min-height: 18px;
+                max-height: 18px;
             }
             QProgressBar#playerLoad::chunk {
                 background: #e50914;
-                border-radius: 4px;
+                border-radius: 9px;
             }
             """
         )
@@ -364,19 +366,19 @@ class PlayerPage(QWidget):
                 padding-top: 2px;
             }
             QSlider#playerSeek::groove:horizontal {
-                height: 8px;
+                height: 14px;
                 background: rgba(255, 255, 255, 0.22);
-                border-radius: 4px;
+                border-radius: 7px;
             }
             QSlider#playerSeek::sub-page:horizontal {
                 background: #e50914;
-                border-radius: 4px;
+                border-radius: 7px;
             }
             QSlider#playerSeek::handle:horizontal {
-                width: 16px;
-                height: 16px;
-                margin: -4px 0;
-                border-radius: 8px;
+                width: 20px;
+                height: 20px;
+                margin: -3px 0;
+                border-radius: 10px;
                 background: #ffffff;
                 border: 1px solid rgba(0, 0, 0, 0.35);
             }

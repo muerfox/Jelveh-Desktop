@@ -46,6 +46,8 @@ class Page(QWidget):
         self.session = session
         self.hub = hub
         self.setObjectName("page")
+        self.setAutoFillBackground(False)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.busy = BusyOverlay(self, session.theme)
         self._generation = 0
 
@@ -82,6 +84,8 @@ def _scroll() -> tuple[QScrollArea, QWidget, QVBoxLayout]:
     area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     area.setFrameShape(QFrame.Shape.NoFrame)
+    area.setAutoFillBackground(False)
+    area.viewport().setAutoFillBackground(False)
     canvas = QWidget()
     canvas.setObjectName("canvas")
     layout = QVBoxLayout(canvas)
@@ -398,6 +402,8 @@ class SearchPage(Page):
     def __init__(self, session, hub):
         super().__init__(session, hub)
         self.page = 1
+        self.last_page = 1
+        self._loading = False
         self.query_text = ""
         self._filters: dict = {}
         self._genres_ready = False
@@ -496,13 +502,9 @@ class SearchPage(Page):
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         column.addWidget(self.empty)
         column.addWidget(self.grid)
-        self.more = QPushButton("نتایج بیشتر")
-        self.more.setObjectName("chip")
-        self.more.clicked.connect(self._more)
-        self.more.hide()
-        column.addWidget(self.more, alignment=Qt.AlignmentFlag.AlignCenter)
         column.addStretch(1)
         outer.addWidget(self.area, 1)
+        self.area.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self._ensure_taxonomies()
 
     def focus_search(self, text: str | None = None) -> None:
@@ -587,42 +589,85 @@ class SearchPage(Page):
     def reload(self) -> None:
         self.invalidate()
         self.page = 1
+        self.last_page = 1
+        self._loading = False
         self._filters = self._collect_filters()
         self.query_text = str(self._filters.get("search") or "")
+        self.area.verticalScrollBar().setValue(0)
         if not self._has_criteria(self._filters):
             self.grid.set_cards([])
             self.empty.setText("عبارت جستجو یا فیلترها را تنظیم کنید.")
             self.empty.show()
-            self.more.hide()
             return
         self._load(append=False)
 
+    def _on_scroll(self, value: int) -> None:
+        bar = self.area.verticalScrollBar()
+        if self._loading or self.page >= self.last_page:
+            return
+        if bar.maximum() - value <= 360:
+            self._more()
+
     def _more(self) -> None:
+        if self._loading or self.page >= self.last_page:
+            return
         self.page += 1
         self._load(append=True)
 
     def _load(self, append: bool) -> None:
+        self._loading = True
         filters = dict(self._filters)
         page = self.page
-        self.track(
+        generation = self._generation
+
+        def success(result, generation=generation, append=append):
+            if generation != self._generation:
+                return
+            self._loading = False
+            self._show(result, append)
+
+        def failure(message, generation=generation, append=append):
+            if generation != self._generation:
+                return
+            self._loading = False
+            if append and self.page > 1:
+                self.page -= 1
+            self.busy.hide()
+            self.hub.toast.emit(message)
+
+        if not append:
+            self.busy.reposition()
+            self.busy.show()
+        self.session.tasks.run(
             lambda: self.session.api.advanced_search(page=page, per_page=24, **filters),
-            lambda result, append=append: self._show(result, append),
+            success,
+            failure,
         )
 
     def _show(self, result, append: bool) -> None:
         self.busy.hide()
         rows, meta = result
+        self.last_page = int(meta.get("last_page") or 1)
         cards = []
         for item in rows:
             data = card_from(item)
             card = PosterCard(data, self.session.images, self.session.theme)
             card.clicked.connect(lambda item: self.hub.open_title.emit(item["type"], int(item["id"])))
             cards.append(card)
+        if append and not cards:
+            self.last_page = self.page
+            return
         self.grid.set_cards(cards, append=append)
         self.empty.setVisible(not self.grid.cards)
-        self.empty.setText("نتیجه‌ای با این فیلتر پیدا نشد.")
-        last = int(meta.get("last_page") or 1)
-        self.more.setVisible(self.page < last)
+        if not self.grid.cards:
+            self.empty.setText("نتیجه‌ای با این فیلتر پیدا نشد.")
+            return
+        QTimer.singleShot(0, self._fill_if_short)
+
+    def _fill_if_short(self) -> None:
+        bar = self.area.verticalScrollBar()
+        if self.page < self.last_page and bar.maximum() <= 80:
+            self._more()
 
 
 class SpoilerLabel(QLabel):

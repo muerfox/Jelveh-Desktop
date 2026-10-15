@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""Windows onedir build. Run on Windows via scripts/build_windows.ps1 so the result lands in dist/windows."""
+"""Windows onefile build. Run on Windows via scripts/build_windows.ps1. Output is a single Jelveh.exe."""
 
 import os
 
@@ -57,8 +57,9 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     name="Jelveh",
     debug=False,
     bootloader_ignore_signals=False,
@@ -66,12 +67,4 @@ exe = EXE(
     upx=False,
     console=False,
     icon=os.path.join(ROOT, "assets", "icon.ico"),
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    name="Jelveh",
 )

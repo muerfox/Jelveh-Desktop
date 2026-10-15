@@ -151,9 +151,9 @@ class DownloadManager(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        movies = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MoviesLocation)
-        home = Path.home() / "Videos"
-        self.folder = Path(movies or home) / "Jelveh"
+        downloads = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+        home = Path.home() / "Downloads"
+        self.folder = Path(downloads or home) / "Jelveh"
         self.folder.mkdir(parents=True, exist_ok=True)
         self.catalog = self.folder / "library.json"
         self.items: list[dict] = self._load()

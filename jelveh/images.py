@@ -13,6 +13,7 @@ from PySide6.QtGui import QImage, QPixmap
 from .tasks import TaskRunner
 
 _USER_AGENT = "JelvehDesktop/1.0"
+_CACHE_LIMIT = 100 * 1024 * 1024
 
 
 class ImageService(QObject):
@@ -23,7 +24,9 @@ class ImageService(QObject):
         self.directory = cache_root / "images"
         self.directory.mkdir(parents=True, exist_ok=True)
         self.memory: OrderedDict[str, QImage] = OrderedDict()
+        self._memory_bytes = 0
         self.waiters: dict[str, list] = {}
+        self._trim_disk()
 
     def load(self, url: str | None, callback) -> None:
         if not url:
@@ -41,27 +44,69 @@ class ImageService(QObject):
 
     def _fetch(self, url: str) -> QImage | None:
         path = self.directory / hashlib.sha256(url.encode()).hexdigest()
-        data = path.read_bytes() if path.exists() else None
-        if data is None:
+        data = path.read_bytes() if path.is_file() else None
+        if data is not None:
+            path.touch()
+        else:
             request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, "Accept": "image/*"})
             with urllib.request.urlopen(request, timeout=25) as response:
                 data = response.read()
             if data:
                 path.write_bytes(data)
+                self._trim_disk()
         image = QImage()
         if not data or not image.loadFromData(data):
+            path.unlink(missing_ok=True)
             return None
         return image
 
     def _deliver(self, url: str, image: QImage | None) -> None:
         if image is not None and not image.isNull():
-            self.memory[url] = image
-            while len(self.memory) > 240:
-                self.memory.popitem(last=False)
+            self._remember(url, image)
         else:
             image = None
         for callback in self.waiters.pop(url, []):
             callback(image)
+
+    def _remember(self, url: str, image: QImage) -> None:
+        if url in self.memory:
+            self._memory_bytes -= self._image_bytes(self.memory[url])
+            del self.memory[url]
+        self.memory[url] = image
+        self._memory_bytes += self._image_bytes(image)
+        while self.memory and self._memory_bytes > _CACHE_LIMIT:
+            _old, dropped = self.memory.popitem(last=False)
+            self._memory_bytes -= self._image_bytes(dropped)
+
+    def _trim_disk(self) -> None:
+        files = []
+        total = 0
+        try:
+            entries = list(self.directory.iterdir())
+        except OSError:
+            return
+        for path in entries:
+            if not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            files.append((stat.st_mtime, stat.st_size, path))
+            total += stat.st_size
+        files.sort()
+        for _mtime, size, path in files:
+            if total <= _CACHE_LIMIT:
+                break
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            total -= size
+
+    @staticmethod
+    def _image_bytes(image: QImage) -> int:
+        return max(int(image.sizeInBytes()), 1)
 
 
 def cover_pixmap(image: QImage | None, width: int, height: int, radius: int = 0) -> QPixmap:

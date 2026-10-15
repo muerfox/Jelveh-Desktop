@@ -17,6 +17,7 @@ from PySide6.QtGui import QAction, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -33,7 +34,7 @@ from .pages import AccountPage, BrowsePage, DetailPage, HomePage, LibraryPage, S
 from .player import PlayerPage
 from .session import Session
 from .theme import app_font, app_icon, load_fonts, logo_pixmap, search_icon, stylesheet
-from .widgets import Toast
+from .widgets import AmbientBackdrop, AmbientStage, Toast
 
 
 class Hub(QObject):
@@ -76,7 +77,13 @@ class MainWindow(QMainWindow):
         content_layout.setSpacing(0)
         content_layout.addWidget(self._build_topbar())
         self.stack = QStackedWidget()
-        content_layout.addWidget(self.stack, 1)
+        self.stack.setObjectName("pageStack")
+        self.stack.setFrameShape(QFrame.Shape.NoFrame)
+        self.stack.setAutoFillBackground(False)
+        self.stack.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._ambient = AmbientBackdrop(session.theme)
+        self.stage = AmbientStage(self._ambient, self.stack)
+        content_layout.addWidget(self.stage, 1)
         shell_layout.addWidget(self.sidebar)
         shell_layout.addWidget(content, 1)
 
@@ -335,6 +342,12 @@ class MainWindow(QMainWindow):
             self.account_button.setObjectName("primary")
         self.account_button.style().unpolish(self.account_button)
         self.account_button.style().polish(self.account_button)
+
+    def show_ambient(self, url: str | None) -> None:
+        self._ambient.preview(url)
+
+    def hide_ambient(self) -> None:
+        self._ambient.dismiss()
 
     def _apply_theme(self) -> None:
         app = QApplication.instance()

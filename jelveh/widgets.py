@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 
-from PySide6.QtCore import QEasingCurve, Property, QPoint, QPropertyAnimation, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, Property, QPoint, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QFrame,
     QGraphicsBlurEffect,
@@ -119,27 +121,43 @@ class BusyOverlay(QWidget):
 
 
 class CompactCombo(QComboBox):
-    """Short field whose popup shows a few rows and scrolls the rest."""
+    """Short field. The list opens at its final size and scrolls smoothly."""
 
-    def __init__(self, parent=None, visible: int = 7):
+    def __init__(self, parent=None, visible: int = 8):
         super().__init__(parent)
+        self._visible = visible
         self.setMaxVisibleItems(visible)
         view = self.view()
+        view.setUniformItemSizes(True)
+        view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        view.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        view.setFrameShape(QFrame.Shape.NoFrame)
+        view.setSpacing(2)
+        bar = view.verticalScrollBar()
+        bar.setSingleStep(14)
 
     def showPopup(self) -> None:
-        super().showPopup()
         view = self.view()
-        rows = min(self.maxVisibleItems(), max(self.count(), 1))
+        rows = min(self._visible, max(self.count(), 1))
         row_height = view.sizeHintForRow(0)
-        if row_height <= 0:
-            row_height = 30
-        height = row_height * rows + 10
+        if row_height < 28:
+            row_height = self.fontMetrics().height() + 16
+        height = row_height * rows + view.spacing() * 2 + 6
+        # Lock the size before the popup appears so it does not jump open.
+        view.setMinimumHeight(height)
         view.setMaximumHeight(height)
+        super().showPopup()
         popup = view.window()
-        popup.setMaximumHeight(height + 4)
-        popup.resize(max(popup.width(), self.width()), height + 4)
+        if popup is not None and popup is not self.window():
+            popup.setFixedWidth(max(self.width(), popup.width()))
+
+    def hidePopup(self) -> None:
+        view = self.view()
+        view.setMinimumHeight(0)
+        view.setMaximumHeight(16777215)
+        super().hidePopup()
 
 
 class PosterCard(QFrame):
@@ -151,6 +169,7 @@ class PosterCard(QFrame):
         self.images = images
         self.theme = theme
         self._hover = 0.0
+        self._image = None
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedWidth(156)
         self.setObjectName("poster")
@@ -181,7 +200,7 @@ class PosterCard(QFrame):
         self._anim = QPropertyAnimation(self, b"hover", self)
         self._anim.setDuration(160)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self.theme.changed.connect(self._paint_placeholder)
+        self.theme.changed.connect(self._on_theme)
         self._paint_placeholder()
         poster = item.get("poster")
         if poster:
@@ -202,6 +221,13 @@ class PosterCard(QFrame):
         ember = self.theme.palette.ember if self._hover > 0.4 else "transparent"
         self.art.setStyleSheet(f"border-radius: 14px; border: 2px solid {ember};")
 
+    def _on_theme(self) -> None:
+        self._restyle()
+        if self._image is not None and not self._image.isNull():
+            self._apply_image(self._image)
+        else:
+            self._paint_placeholder()
+
     def _paint_placeholder(self) -> None:
         self._restyle()
         pix = QPixmap(156, 234)
@@ -220,8 +246,12 @@ class PosterCard(QFrame):
     def _set_image(self, image) -> None:
         from shiboken6 import isValid
 
-        if image is None or not isValid(self.art):
+        if image is None or image.isNull() or not isValid(self.art):
             return
+        self._image = image
+        self._apply_image(image)
+
+    def _apply_image(self, image) -> None:
         self.art.setPixmap(cover_pixmap(image, 156, 234, 22))
         self.badge.raise_()
 
@@ -230,6 +260,10 @@ class PosterCard(QFrame):
         self._anim.setStartValue(self._hover)
         self._anim.setEndValue(1.0)
         self._anim.start()
+        window = self.window()
+        show = getattr(window, "show_ambient", None)
+        if show is not None:
+            show(self.item.get("backdrop") or self.item.get("poster"))
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
@@ -237,6 +271,10 @@ class PosterCard(QFrame):
         self._anim.setStartValue(self._hover)
         self._anim.setEndValue(0.0)
         self._anim.start()
+        window = self.window()
+        hide = getattr(window, "hide_ambient", None)
+        if hide is not None:
+            hide()
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
@@ -265,6 +303,7 @@ class SmoothScroll(QScrollArea):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+        self.viewport().setAutoFillBackground(False)
         self._press = None
         self._origin = 0
         self.dragged = False
@@ -706,7 +745,7 @@ class Hero(QWidget):
         super().leaveEvent(event)
 
 
-def blurred_cover(image, width: int, height: int, radius: int = 16) -> QPixmap:
+def blurred_cover(image, width: int, height: int, radius: int = 16, fast: bool = False) -> QPixmap:
     """Cover-crop, then blur, keeping a sharp center so the edges stay filled."""
     width = max(int(width), 1)
     height = max(int(height), 1)
@@ -720,7 +759,8 @@ def blurred_cover(image, width: int, height: int, radius: int = 16) -> QPixmap:
     item = QGraphicsPixmapItem(source)
     effect = QGraphicsBlurEffect()
     effect.setBlurRadius(radius)
-    effect.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
+    hint = QGraphicsBlurEffect.BlurHint.PerformanceHint if fast else QGraphicsBlurEffect.BlurHint.QualityHint
+    effect.setBlurHints(hint)
     item.setGraphicsEffect(effect)
     scene.addItem(item)
     result = QPixmap(width, height)
@@ -729,6 +769,221 @@ def blurred_cover(image, width: int, height: int, radius: int = 16) -> QPixmap:
     scene.render(painter, QRectF(0, 0, width, height), QRectF(pad, pad, width, height))
     painter.end()
     return result
+
+
+def soft_backdrop(image) -> QPixmap:
+    """Small, heavily blurred cover. Scaled up later so a hover stays cheap."""
+    return blurred_cover(image, 640, 360, 32, fast=True)
+
+
+class AmbientBackdrop(QWidget):
+    """Darkened blur that fades in behind the pages while a title is hovered."""
+
+    def __init__(self, theme, parent=None):
+        super().__init__(parent)
+        self.theme = theme
+        self._cache: OrderedDict[str, QPixmap] = OrderedDict()
+        self._url = ""
+        self._token = 0
+        self._base = QPixmap()
+        self._old = QPixmap()
+        self._scaled = QPixmap()
+        self._old_scaled = QPixmap()
+        self._scaled_size = QSize()
+        self._opacity = 0.0
+        self._mix = 1.0
+        self._pending = ""
+        self._anim = QPropertyAnimation(self, b"opacity", self)
+        self._anim.setDuration(320)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._mix_anim = QPropertyAnimation(self, b"mix", self)
+        self._mix_anim.setDuration(280)
+        self._mix_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._show_timer = QTimer(self)
+        self._show_timer.setSingleShot(True)
+        self._show_timer.setInterval(60)
+        self._show_timer.timeout.connect(self._commit)
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(140)
+        self._hide_timer.timeout.connect(self._fade_out)
+        self.theme.changed.connect(self._refresh)
+        self.hide()
+
+    def _refresh(self) -> None:
+        host = self.parentWidget()
+        if host is not None:
+            host.update()
+
+    def get_opacity(self) -> float:
+        return self._opacity
+
+    def set_opacity(self, value: float) -> None:
+        self._opacity = value
+        self._refresh()
+
+    def get_mix(self) -> float:
+        return self._mix
+
+    def set_mix(self, value: float) -> None:
+        self._mix = value
+        self._refresh()
+
+    opacity = Property(float, get_opacity, set_opacity)
+    mix = Property(float, get_mix, set_mix)
+
+    def preview(self, url: str | None) -> None:
+        self._hide_timer.stop()
+        self._pending = url or ""
+        if not self._pending:
+            self._fade_out()
+            return
+        self._show_timer.start()
+
+    def dismiss(self) -> None:
+        self._show_timer.stop()
+        self._hide_timer.start()
+
+    def _commit(self) -> None:
+        url = self._pending
+        if not url:
+            self._fade_out()
+            return
+        if url == self._url and not self._base.isNull():
+            self._fade_in()
+            return
+        self._url = url
+        self._token += 1
+        token = self._token
+        cached = self._cache.get(url)
+        if cached is not None:
+            self._cache.move_to_end(url)
+            self._apply(cached)
+            return
+        images = getattr(self.window(), "session", None)
+        images = getattr(images, "images", None)
+        if images is None:
+            return
+        images.load(url, lambda image, token=token, url=url: self._loaded(token, url, image))
+
+    def _loaded(self, token: int, url: str, image) -> None:
+        from shiboken6 import isValid
+
+        if token != self._token or not isValid(self):
+            return
+        if image is None or image.isNull():
+            return
+        pixmap = soft_backdrop(image)
+        self._cache[url] = pixmap
+        while len(self._cache) > 16:
+            self._cache.popitem(last=False)
+        if url == self._url:
+            self._apply(pixmap)
+
+    def _apply(self, pixmap: QPixmap) -> None:
+        if not self._base.isNull() and self._opacity > 0.15:
+            self._old = self._base
+            self._old_scaled = self._scaled
+            self._mix = 0.0
+            self._mix_anim.stop()
+            self._mix_anim.setStartValue(0.0)
+            self._mix_anim.setEndValue(1.0)
+            self._mix_anim.start()
+        else:
+            self._old = QPixmap()
+            self._old_scaled = QPixmap()
+            self._mix = 1.0
+        self._base = pixmap
+        self._scaled = QPixmap()
+        self._scaled_size = QSize()
+        self._fade_in()
+
+    def _fade_in(self) -> None:
+        self._anim.stop()
+        self._anim.setStartValue(self._opacity)
+        self._anim.setEndValue(1.0)
+        self._anim.start()
+
+    def _fade_out(self) -> None:
+        self._pending = ""
+        self._anim.stop()
+        self._anim.setStartValue(self._opacity)
+        self._anim.setEndValue(0.0)
+        self._anim.start()
+
+    def note_resize(self) -> None:
+        self._scaled = QPixmap()
+        self._old_scaled = QPixmap()
+        self._scaled_size = QSize()
+
+    def _cover(self, source: QPixmap, target_attr: str, size: QSize) -> QPixmap:
+        cached = getattr(self, target_attr)
+        if source.isNull() or size.width() < 2 or size.height() < 2:
+            return QPixmap()
+        if not cached.isNull() and cached.size() == size:
+            return cached
+        scaled = source.scaled(size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+        x = max(0, (scaled.width() - size.width()) // 2)
+        y = max(0, (scaled.height() - size.height()) // 2)
+        cropped = scaled.copy(x, y, size.width(), size.height())
+        setattr(self, target_attr, cropped)
+        return cropped
+
+    def paint_on(self, widget: QWidget) -> None:
+        painter = QPainter(widget)
+        page = QColor(self.theme.palette.bg)
+        painter.fillRect(widget.rect(), page)
+        size = widget.size()
+        if self._opacity <= 0.01 or self._base.isNull():
+            painter.end()
+            return
+        current = self._cover(self._base, "_scaled", size)
+        if self._mix < 0.999 and not self._old.isNull():
+            previous = self._cover(self._old, "_old_scaled", size)
+            if not previous.isNull():
+                painter.setOpacity(self._opacity * (1.0 - self._mix))
+                painter.drawPixmap(0, 0, previous)
+        if not current.isNull():
+            painter.setOpacity(self._opacity * self._mix)
+            painter.drawPixmap(0, 0, current)
+        painter.setOpacity(1.0)
+        if self.theme.mode == "dark":
+            veil = QColor(0, 0, 0, int(168 * self._opacity))
+        else:
+            veil = QColor(page)
+            veil.setAlpha(int(214 * self._opacity))
+        painter.fillRect(widget.rect(), veil)
+        painter.end()
+
+
+class AmbientStage(QWidget):
+    """Page stack floating on top of the hover backdrop."""
+
+    def __init__(self, ambient: AmbientBackdrop, stack: QWidget, parent=None):
+        super().__init__(parent)
+        self.ambient = ambient
+        self.stack = stack
+        ambient.setParent(self)
+        ambient.hide()
+        stack.setParent(self)
+        self.setAutoFillBackground(False)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+    def resizeEvent(self, event) -> None:
+        self.ambient.note_resize()
+        super().resizeEvent(event)
+        self._fit()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._fit()
+
+    def paintEvent(self, _event) -> None:
+        self.ambient.paint_on(self)
+
+    def _fit(self) -> None:
+        self.stack.setGeometry(self.rect())
+        self.stack.raise_()
 
 
 class TitleHero(QWidget):

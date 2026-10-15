@@ -335,8 +335,12 @@ def stylesheet(theme: Theme) -> str:
         font-family: "{family}";
         outline: none;
     }}
-    QMainWindow, QDialog, QWidget#page, QWidget#shell {{
+    QMainWindow, QDialog, QWidget#shell {{
         background: {c.bg};
+        color: {c.text};
+    }}
+    QWidget#page, QStackedWidget#pageStack, QWidget#qt_scrollarea_viewport {{
+        background: transparent;
         color: {c.text};
     }}
     QWidget#sidebar {{
@@ -470,8 +474,8 @@ def stylesheet(theme: Theme) -> str:
     QComboBox {{
         padding: 0px 12px;
         border-radius: 16px;
-        min-height: 32px;
-        max-height: 32px;
+        min-height: 36px;
+        max-height: 36px;
         font-size: 13px;
     }}
     QComboBox::drop-down {{ border: none; width: 22px; }}
@@ -479,16 +483,19 @@ def stylesheet(theme: Theme) -> str:
         background: {c.card};
         color: {c.text};
         border: 1px solid {c.line};
-        border-radius: 14px;
+        border-radius: 16px;
         selection-background-color: {c.ember};
         selection-color: #ffffff;
-        padding: 2px;
+        padding: 4px;
         outline: none;
     }}
     QComboBox QAbstractItemView::item {{
-        min-height: 26px;
-        padding: 2px 8px;
+        min-height: 32px;
+        padding: 4px 12px;
         border-radius: 12px;
+    }}
+    QComboBox QAbstractItemView::item:hover {{
+        background: {c.surface};
     }}
     QScrollArea {{ background: transparent; border: none; }}
     QWidget#canvas {{ background: transparent; }}
