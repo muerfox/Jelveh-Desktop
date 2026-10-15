@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPixmap
 
 from .paths import asset
 
@@ -103,29 +103,38 @@ def app_font(family: str) -> QFont:
     return font
 
 
-def logo_pixmap(size: int = 36) -> QPixmap:
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    rect = QRectF(0, 0, size, size)
-    path = QPainterPath()
-    path.addRoundedRect(rect, size * 0.28, size * 0.28)
-    painter.fillPath(path, QColor("#e50914"))
-    painter.setPen(QPen(QColor("#ffffff")))
-    font = QFont("Vazirmatn")
-    font.setPixelSize(int(size * 0.62))
-    font.setWeight(QFont.Weight.Bold)
-    painter.setFont(font)
-    painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "J")
-    painter.end()
+def _brand_image() -> QPixmap:
+    path = asset("icon.png")
+    pixmap = QPixmap(str(path))
+    if pixmap.isNull():
+        fallback = QPixmap(256, 256)
+        fallback.fill(QColor("#e50914"))
+        return fallback
     return pixmap
+
+
+def logo_pixmap(size: int = 36) -> QPixmap:
+    source = _brand_image()
+    return source.scaled(
+        size,
+        size,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
 
 
 def app_icon() -> QIcon:
     icon = QIcon()
+    source = _brand_image()
     for size in (16, 24, 32, 48, 64, 128, 256):
-        icon.addPixmap(logo_pixmap(size))
+        icon.addPixmap(
+            source.scaled(
+                size,
+                size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
     return icon
 
 
