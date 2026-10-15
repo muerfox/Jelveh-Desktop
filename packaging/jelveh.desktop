@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=جلوه
+Comment=تماشا و دانلود از jelveh.top
+Exec=Jelveh
+Icon=jelveh
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Player;
+StartupWMClass=جلوه
