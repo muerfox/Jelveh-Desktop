@@ -339,7 +339,7 @@ def stylesheet(theme: Theme) -> str:
         background: {c.bg};
         color: {c.text};
     }}
-    QWidget#page, QStackedWidget#pageStack, QWidget#qt_scrollarea_viewport {{
+    QWidget#page, QStackedWidget#pageStack {{
         background: transparent;
         color: {c.text};
     }}
@@ -482,20 +482,33 @@ def stylesheet(theme: Theme) -> str:
     QComboBox QAbstractItemView {{
         background: {c.card};
         color: {c.text};
-        border: 1px solid {c.line};
-        border-radius: 16px;
+        border: none;
         selection-background-color: {c.ember};
         selection-color: #ffffff;
-        padding: 4px;
+        padding: 6px;
         outline: none;
     }}
+    QWidget#comboViewport {{
+        background: {c.card};
+    }}
     QComboBox QAbstractItemView::item {{
-        min-height: 32px;
-        padding: 4px 12px;
-        border-radius: 12px;
+        min-height: 34px;
+        padding: 6px 14px;
+        border-radius: 10px;
+        color: {c.text};
+    }}
+    QComboBox QAbstractItemView::item:selected {{
+        background: {c.ember};
+        color: #ffffff;
     }}
     QComboBox QAbstractItemView::item:hover {{
         background: {c.surface};
+        color: {c.text};
+    }}
+    QFrame#comboPopup {{
+        background: {c.card};
+        border: 1px solid {c.line};
+        border-radius: 16px;
     }}
     QScrollArea {{ background: transparent; border: none; }}
     QWidget#canvas {{ background: transparent; }}

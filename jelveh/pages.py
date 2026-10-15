@@ -84,6 +84,7 @@ def _scroll() -> tuple[QScrollArea, QWidget, QVBoxLayout]:
     area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     area.setFrameShape(QFrame.Shape.NoFrame)
+    area.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }")
     area.setAutoFillBackground(False)
     area.viewport().setAutoFillBackground(False)
     canvas = QWidget()

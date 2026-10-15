@@ -6,7 +6,7 @@ import math
 from collections import OrderedDict
 
 from PySide6.QtCore import QEasingCurve, Property, QPoint, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
@@ -120,14 +122,26 @@ class BusyOverlay(QWidget):
             self.raise_()
 
 
+class _ComboItemDelegate(QStyledItemDelegate):
+    """Keep every row right-aligned so English and Persian sit on the same edge."""
+
+    def initStyleOption(self, option: QStyleOptionViewItem, index) -> None:
+        super().initStyleOption(option, index)
+        option.displayAlignment = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+
+
 class CompactCombo(QComboBox):
-    """Short field. The list opens at its final size and scrolls smoothly."""
+    """Short field. The list opens at a fixed height and scrolls the rest."""
 
     def __init__(self, parent=None, visible: int = 8):
         super().__init__(parent)
         self._visible = visible
         self.setMaxVisibleItems(visible)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(10)
         view = self.view()
+        view.setItemDelegate(_ComboItemDelegate(view))
         view.setUniformItemSizes(True)
         view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         view.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -135,28 +149,100 @@ class CompactCombo(QComboBox):
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         view.setFrameShape(QFrame.Shape.NoFrame)
         view.setSpacing(2)
+        view.setTextElideMode(Qt.TextElideMode.ElideLeft)
+        viewport = view.viewport()
+        viewport.setObjectName("comboViewport")
+        viewport.setAutoFillBackground(True)
         bar = view.verticalScrollBar()
-        bar.setSingleStep(14)
+        bar.setSingleStep(18)
+        bar.setPageStep(18 * visible)
+
+    def _card_color(self) -> QColor:
+        session = getattr(self.window(), "session", None)
+        theme = getattr(session, "theme", None) if session is not None else None
+        if theme is not None:
+            return QColor(theme.palette.card)
+        return QColor("#181818")
+
+    def _popup_width(self) -> int:
+        view = self.view()
+        content = view.sizeHintForColumn(0)
+        if content <= 0:
+            content = self.fontMetrics().horizontalAdvance("نمونه متن ژانر بلند")
+        return min(max(self.width(), content + 48, 180), 340)
+
+    def _paint_popup(self, popup, fill: QColor) -> None:
+        popup.setObjectName("comboPopup")
+        # Rounded corners need a translucent window, or the system fill shows through.
+        popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        popup.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        popup.setAutoFillBackground(False)
+        palette = popup.palette()
+        for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.Button):
+            palette.setColor(role, fill)
+        popup.setPalette(palette)
+        line = "#242424"
+        handle = "#333333"
+        popup.setStyleSheet(
+            f"QFrame#comboPopup {{ background-color: {fill.name()}; border: 1px solid {line}; border-radius: 14px; }}"
+            f"QScrollBar:vertical {{ background: transparent; width: 8px; margin: 8px 4px; }}"
+            f"QScrollBar::handle:vertical {{ background: {handle}; border-radius: 4px; min-height: 28px; }}"
+            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,"
+            f"QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; height: 0; }}"
+        )
+        view = self.view()
+        viewport = view.viewport()
+        viewport.setAutoFillBackground(True)
+        viewport.setObjectName("comboViewport")
+        vp = viewport.palette()
+        vp.setColor(QPalette.ColorRole.Base, fill)
+        vp.setColor(QPalette.ColorRole.Window, fill)
+        viewport.setPalette(vp)
+        view.setStyleSheet(
+            f"QAbstractItemView {{ background: {fill.name()}; border: none; outline: none; border-radius: 12px; }}"
+            f"QWidget#comboViewport {{ background: {fill.name()}; }}"
+            f"QAbstractItemView::item {{ min-height: 34px; padding: 6px 14px; border-radius: 10px; }}"
+        )
 
     def showPopup(self) -> None:
         view = self.view()
         rows = min(self._visible, max(self.count(), 1))
-        row_height = view.sizeHintForRow(0)
-        if row_height < 28:
-            row_height = self.fontMetrics().height() + 16
-        height = row_height * rows + view.spacing() * 2 + 6
-        # Lock the size before the popup appears so it does not jump open.
-        view.setMinimumHeight(height)
-        view.setMaximumHeight(height)
+        row_height = max(view.sizeHintForRow(0), self.fontMetrics().height() + 18, 34)
+        height = row_height * rows + 12
+        width = self._popup_width()
+        fill = self._card_color()
+        view.setFixedHeight(height)
         super().showPopup()
         popup = view.window()
-        if popup is not None and popup is not self.window():
-            popup.setFixedWidth(max(self.width(), popup.width()))
+        if popup is None or popup is self.window():
+            return
+        self._paint_popup(popup, fill)
+        # Hide the default up/down scroller arrows Qt sticks on long lists.
+        for child in popup.findChildren(QWidget):
+            if child.metaObject().className() == "QComboBoxPrivateScroller":
+                child.hide()
+                child.setFixedHeight(0)
+        popup.setFixedSize(width, height + 2)
+        view.setFixedSize(width, height)
+        # Keep the list under the field instead of drifting after the resize.
+        below = self.mapToGlobal(self.rect().bottomLeft())
+        above = self.mapToGlobal(self.rect().topLeft())
+        screen = self.screen()
+        available = screen.availableGeometry() if screen is not None else None
+        y = below.y() + 4
+        if available is not None and y + popup.height() > available.bottom():
+            y = max(available.top(), above.y() - popup.height() - 4)
+        x = below.x()
+        if self.layoutDirection() == Qt.LayoutDirection.RightToLeft:
+            x = below.x() + self.width() - popup.width()
+        if available is not None:
+            x = min(max(x, available.left()), available.right() - popup.width())
+        popup.move(x, y)
 
     def hidePopup(self) -> None:
         view = self.view()
-        view.setMinimumHeight(0)
-        view.setMaximumHeight(16777215)
+        view.setMinimumSize(0, 0)
+        view.setMaximumSize(16777215, 16777215)
         super().hidePopup()
 
 
